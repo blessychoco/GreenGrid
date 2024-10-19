@@ -7,6 +7,9 @@
 (define-constant err-invalid-amount (err u102))
 (define-constant err-transfer-failed (err u103))
 (define-constant err-not-whitelisted (err u104))
+(define-constant err-invalid-price (err u105))
+(define-constant err-already-whitelisted (err u106))
+(define-constant err-not-in-whitelist (err u107))
 
 ;; Define data variables
 (define-data-var energy-price uint u100)
@@ -53,18 +56,21 @@
 (define-public (set-energy-price (new-price uint))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (> new-price u0) err-invalid-price)
     (ok (var-set energy-price new-price))))
 
 ;; Admin function to add user to whitelist
 (define-public (add-to-whitelist (user principal))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (not (is-whitelisted user)) err-already-whitelisted)
     (ok (map-set whitelist user true))))
 
 ;; Admin function to remove user from whitelist
 (define-public (remove-from-whitelist (user principal))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (is-whitelisted user) err-not-in-whitelist)
     (ok (map-delete whitelist user))))
 
 ;; Read-only function to get current energy price
