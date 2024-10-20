@@ -1,4 +1,4 @@
-;; GreenGrid Energy Trading Smart Contract
+;; GreenGrid Energy Trading Smart Contract with Dynamic Pricing
 
 ;; Define constants
 (define-constant contract-owner tx-sender)
@@ -14,6 +14,8 @@
 ;; Define data variables
 (define-data-var energy-price uint u100)
 (define-data-var total-energy-traded uint u0)
+(define-data-var price-adjustment-threshold uint u1000)  ;; Threshold for price adjustment
+(define-data-var price-adjustment-percentage uint u5)    ;; 5% adjustment
 
 ;; Define data maps
 (define-map balances principal uint)
@@ -23,6 +25,28 @@
 ;; Private function to check if user is whitelisted
 (define-private (is-whitelisted (user principal))
   (default-to false (map-get? whitelist user)))
+
+;; Private function to adjust price based on trading volume
+(define-private (adjust-price)
+  (let (
+    (current-price (var-get energy-price))
+    (total-traded (var-get total-energy-traded))
+    (threshold (var-get price-adjustment-threshold))
+    (adjustment-percentage (var-get price-adjustment-percentage))
+  )
+    (if (>= total-traded threshold)
+      (let (
+        (price-increase (/ (* current-price adjustment-percentage) u100))
+        (new-price (+ current-price price-increase))
+      )
+        (var-set energy-price new-price)
+        (var-set total-energy-traded u0)  ;; Reset the counter
+        new-price  ;; Return the new price
+      )
+      current-price  ;; Return current price if threshold not met
+    )
+  )
+)
 
 ;; Public function to buy energy
 (define-public (buy-energy (amount uint))
@@ -36,6 +60,7 @@
     (map-set energy-credits tx-sender 
       (+ (default-to u0 (map-get? energy-credits tx-sender)) amount))
     (var-set total-energy-traded (+ (var-get total-energy-traded) amount))
+    (var-set energy-price (adjust-price))  ;; Adjust price after successful transaction
     (ok true)))
 
 ;; Public function to sell energy
@@ -50,14 +75,25 @@
     (map-set energy-credits tx-sender (- current-balance amount))
     (try! (as-contract (stx-transfer? payment contract-owner tx-sender)))
     (var-set total-energy-traded (+ (var-get total-energy-traded) amount))
+    (var-set energy-price (adjust-price))  ;; Adjust price after successful transaction
     (ok true)))
 
-;; Admin function to set energy price
+;; Admin function to set energy price manually (if needed)
 (define-public (set-energy-price (new-price uint))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
     (asserts! (> new-price u0) err-invalid-price)
     (ok (var-set energy-price new-price))))
+
+;; Admin function to set price adjustment parameters
+(define-public (set-price-adjustment-params (new-threshold uint) (new-percentage uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (> new-threshold u0) err-invalid-amount)
+    (asserts! (and (> new-percentage u0) (<= new-percentage u100)) err-invalid-amount)
+    (var-set price-adjustment-threshold new-threshold)
+    (var-set price-adjustment-percentage new-percentage)
+    (ok true)))
 
 ;; Admin function to add user to whitelist
 (define-public (add-to-whitelist (user principal))
@@ -88,3 +124,10 @@
 ;; Read-only function to get total energy traded
 (define-read-only (get-total-energy-traded)
   (ok (var-get total-energy-traded)))
+
+;; Read-only function to get current price adjustment parameters
+(define-read-only (get-price-adjustment-params)
+  (ok {
+    threshold: (var-get price-adjustment-threshold),
+    percentage: (var-get price-adjustment-percentage)
+  }))
